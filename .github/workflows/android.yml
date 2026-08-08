@@ -1,0 +1,184 @@
+name: Build Android App
+
+# App Android load trực tiếp GitHub Pages (server.url trong capacitor.config.ts)
+# nên sửa gì trong các file web ở root chỉ cần deploy.yml (Pages) chạy, KHÔNG cần build lại
+# APK ở đây. Workflow này chỉ chạy khi đổi phần native của app:
+# - Pull request vào main: chỉ build thử (không tăng version, không tạo release)
+# - Push vào main: tự tăng version, build APK, commit lại bởi github-actions[bot],
+#   tạo tag android-vX.Y.Z và GitHub Release kèm APK (giống repo mẫu bạn gửi)
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "android-app/**"
+      - "capacitor.config.ts"
+      - "package.json"
+      - ".github/workflows/android.yml"
+  push:
+    branches: [main]
+    paths:
+      - "android-app/**"
+      - "capacitor.config.ts"
+      - "package.json"
+      - ".github/workflows/android.yml"
+  workflow_dispatch: {}
+
+jobs:
+  # ============================================================
+  # PULL REQUEST: chỉ build kiểm tra, không đụng vào version/release
+  # ============================================================
+  build-check:
+    if: github.event_name == 'pull_request'
+    name: Build kiểm tra (PR)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+      - run: npm ci
+      - run: npx cap sync android
+      - uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "21"
+      - uses: android-actions/setup-android@v3
+      - run: chmod +x android-app/gradlew
+      - name: Build APK debug (chỉ để kiểm tra PR build được)
+        working-directory: android-app
+        run: ./gradlew assembleDebug --no-daemon
+
+  # ============================================================
+  # PUSH main: tăng version -> build -> commit -> tag -> release
+  # ============================================================
+  release:
+    if: >-
+      github.event_name != 'pull_request' &&
+      !contains(github.event.head_commit.message, '[skip ci]')
+    name: Tăng version, build APK và tạo Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout mã nguồn
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Cài Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Cài dependencies (Capacitor)
+        run: npm ci
+
+      - name: Tự tăng version (patch) + build number
+        id: bump
+        run: |
+          CURRENT_VERSION=$(jq -r '.version' version.json)
+          CURRENT_BUILD=$(jq -r '.build' version.json)
+
+          MAJOR=$(echo "$CURRENT_VERSION" | cut -d. -f1)
+          MINOR=$(echo "$CURRENT_VERSION" | cut -d. -f2)
+          PATCH=$(echo "$CURRENT_VERSION" | cut -d. -f3)
+
+          NEW_PATCH=$((PATCH + 1))
+          NEW_VERSION="$MAJOR.$MINOR.$NEW_PATCH"
+          NEW_BUILD=$((CURRENT_BUILD + 1))
+          TODAY=$(date -u +%Y-%m-%d)
+
+          echo "Phiên bản: $CURRENT_VERSION (build $CURRENT_BUILD) -> $NEW_VERSION (build $NEW_BUILD)"
+
+          # Cập nhật version.json (giữ nguyên changelog cũ, chỉ đổi version/build/releaseDate)
+          jq --arg v "$NEW_VERSION" --argjson b "$NEW_BUILD" --arg d "$TODAY" \
+            '.version = $v | .build = $b | .releaseDate = $d' \
+            version.json > version.json.tmp
+          mv version.json.tmp version.json
+
+          # Đồng bộ versionName/versionCode sang Android
+          sed -i "s/versionCode [0-9]\+/versionCode $NEW_BUILD/" android-app/app/build.gradle
+          sed -i "s/versionName \"[^\"]*\"/versionName \"$NEW_VERSION\"/" android-app/app/build.gradle
+
+          echo "new_version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+          echo "new_build=$NEW_BUILD" >> "$GITHUB_OUTPUT"
+          echo "tag=android-v$NEW_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Commit bump version
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add version.json android-app/app/build.gradle
+          git commit -m "chore: bump version to ${{ steps.bump.outputs.new_version }} [skip ci]"
+          git push origin HEAD:main
+
+      - name: Đồng bộ mã web vào project Android
+        run: npx cap sync android
+
+      - name: Cài Java (JDK 21)
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "21"
+
+      - name: Cài Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('android-app/**/*.gradle*', 'android-app/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
+      - name: Cấp quyền thực thi cho gradlew
+        run: chmod +x android-app/gradlew
+
+      - name: Build APK debug
+        working-directory: android-app
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Giải mã keystore từ secret (nếu có cấu hình ký)
+        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android-app/app/release.keystore
+
+      - name: Build APK release
+        working-directory: android-app
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' && 'app/release.keystore' || '' }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Tạo Git tag
+        run: |
+          git tag ${{ steps.bump.outputs.tag }}
+          git push origin ${{ steps.bump.outputs.tag }}
+
+      - name: Tạo GitHub Release kèm APK
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.bump.outputs.tag }}
+          name: "Android v${{ steps.bump.outputs.new_version }}"
+          body: |
+            Build tự động từ commit ${{ github.sha }}.
+            Xem `version.json` để biết chi tiết thay đổi.
+          files: |
+            android-app/app/build/outputs/apk/debug/app-debug.apk
+            android-app/app/build/outputs/apk/release/app-release*.apk
+
+      - name: Tải lên APK (artifact, ngoài Release)
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apk-${{ steps.bump.outputs.new_version }}
+          path: |
+            android-app/app/build/outputs/apk/debug/app-debug.apk
+            android-app/app/build/outputs/apk/release/app-release*.apk
+          if-no-files-found: error

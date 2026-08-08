@@ -1,0 +1,70 @@
+name: Deploy PWA to GitHub Pages
+
+# Site (index.html, css, js, icons...) nằm ngay ở repo root, lẫn với các
+# file dự án khác (android-app/, .github/, package.json...). Vì vậy workflow
+# này KHÔNG deploy thẳng root, mà copy riêng phần web thật ra thư mục tạm
+# _site/ (loại trừ mọi thứ không thuộc site) rồi mới upload lên Pages.
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "android-app/**"
+      - "android-shell/**"
+      - ".github/workflows/android.yml"
+      - "capacitor.config.ts"
+      - "package.json"
+      - "package-lock.json"
+      - "README.md"
+      - ".gitignore"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Chỉ cho phép 1 lần deploy chạy cùng lúc, huỷ các lần đang chờ nếu có bản mới hơn
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout mã nguồn
+        uses: actions/checkout@v4
+
+      - name: Đóng gói riêng phần web thật vào _site/ (loại trừ file dự án)
+        run: |
+          mkdir -p _site
+          rsync -a \
+            --exclude ".git" \
+            --exclude ".github" \
+            --exclude "android-app" \
+            --exclude "android-shell" \
+            --exclude "node_modules" \
+            --exclude "_site" \
+            --exclude "package.json" \
+            --exclude "package-lock.json" \
+            --exclude "capacitor.config.ts" \
+            --exclude "README.md" \
+            --exclude ".gitignore" \
+            ./ _site/
+          echo "Nội dung sẽ deploy lên Pages:"
+          ls -la _site
+
+      - name: Cấu hình GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Đóng gói _site/ làm artifact Pages
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: "_site"
+
+      - name: Deploy lên GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
