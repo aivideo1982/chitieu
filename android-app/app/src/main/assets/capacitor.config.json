@@ -1,0 +1,14 @@
+{
+	"appId": "com.soquy.giadinh",
+	"appName": "Sổ Quỹ Gia Đình",
+	"webDir": "android-shell",
+	"server": {
+		"url": "https://aivideo1982.github.io/chitieu/",
+		"androidScheme": "https",
+		"cleartext": false
+	},
+	"android": {
+		"path": "android-app",
+		"allowMixedContent": false
+	}
+}
