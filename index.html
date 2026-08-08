@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0" />
+<title>Sổ Quỹ Gia Đình</title>
+<meta name="description" content="Quản lý thu chi gia đình, đồng bộ realtime nhiều thiết bị qua Firebase. Hoạt động cả khi không có mạng." />
+<link rel="manifest" href="manifest.json" />
+<meta name="theme-color" content="#F7F8F3" />
+
+<!-- Cài lên màn hình chính: Android / Chrome -->
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
+<link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png" />
+
+<!-- Cài lên màn hình chính: iOS / Safari (iOS không đọc manifest.json đầy đủ) -->
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<meta name="apple-mobile-web-app-title" content="Sổ Quỹ" />
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<!-- ============ MÀN HÌNH ĐĂNG NHẬP ============ -->
+<!-- Firebase đã được cấu hình sẵn trong firebase-config.js và tự động kết
+     nối ngầm khi mở trang — người dùng chỉ cần đăng nhập, không cần nhập
+     Database URL thủ công. -->
+<div id="loginScreen">
+  <div class="connect-card">
+    <div class="ledger-mark">Sổ Quỹ · Gia Đình</div>
+    <h1>Đăng nhập</h1>
+    <p>Đồng bộ realtime giữa mọi thiết bị trong gia đình. Đăng nhập bằng tài khoản quản trị để tiếp tục.</p>
+    <form id="loginForm">
+      <label>Tài khoản
+        <input id="loginUsername" placeholder="admin" autocomplete="username" autocapitalize="off" />
+      </label>
+      <label>Mật khẩu
+        <input id="loginPassword" type="password" placeholder="••••••••" autocomplete="current-password" />
+      </label>
+      <label class="checkbox-line">
+        <input type="checkbox" id="loginRemember" checked />
+        <span>Ghi nhớ đăng nhập trên thiết bị này</span>
+      </label>
+      <button class="btn btn--primary" id="loginBtn" type="submit" style="width:100%">Đăng nhập</button>
+    </form>
+    <p class="login-error hidden" id="loginError"></p>
+    <div class="connect-hint">
+      Tài khoản mặc định: <b>admin</b> / <b>admin123</b><br/>
+      Đổi mật khẩu sau khi đăng nhập tại ⚙️ Cài đặt.
+    </div>
+    <p class="muted" id="loginConnStatus" style="margin-top:14px; font-size:0.8rem;">🟠 Đang kết nối Firebase…</p>
+  </div>
+</div>
+
+<!-- ============ ỨNG DỤNG CHÍNH ============ -->
+<button id="navToggle" aria-label="Mở menu">☰</button>
+
+<div id="appShell" class="hidden">
+  <nav id="sideNav">
+    <div class="brand">
+      <span>Sổ Quỹ Gia Đình<small>Realtime · Firebase</small></span>
+    </div>
+    <div class="nav-scroll">
+      <div class="nav-group">
+        <button class="nav-btn active" data-tab="dashboard"><span class="nav-btn__icon">🏠</span>Tổng quan</button>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-group__label">Sổ sách</div>
+        <button class="nav-btn" data-tab="transactions"><span class="nav-btn__icon">💸</span>Giao dịch</button>
+        <button class="nav-btn" data-tab="budget"><span class="nav-btn__icon">🎯</span>Ngân sách</button>
+        <button class="nav-btn" data-tab="reports"><span class="nav-btn__icon">📊</span>Báo cáo</button>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-group__label">Quản lý</div>
+        <button class="nav-btn" data-tab="family"><span class="nav-btn__icon">👨‍👩‍👧‍👦</span>Thành viên</button>
+        <button class="nav-btn" data-tab="accounts"><span class="nav-btn__icon">💳</span>Tài khoản</button>
+        <button class="nav-btn" data-tab="categories"><span class="nav-btn__icon">🏷️</span>Danh mục</button>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-group__label">Hệ thống</div>
+        <button class="nav-btn" data-tab="notifications"><span class="nav-btn__icon">🔔</span>Thông báo</button>
+        <button class="nav-btn" data-tab="backup"><span class="nav-btn__icon">🗄️</span>Sao lưu</button>
+        <button class="nav-btn" data-tab="settings"><span class="nav-btn__icon">⚙️</span>Cài đặt</button>
+      </div>
+    </div>
+
+    <button class="btn btn--ghost" id="installBtn" style="display:none; margin: 10px 4px 6px;">⬇️ Cài ứng dụng lên máy</button>
+
+    <div class="status-bar">
+      <span class="status-dot dot--offline" id="statusDot"></span>
+      <span id="statusLabel">🔴 Offline • Chờ kết nối</span>
+    </div>
+    <div class="status-bar" id="pendingBar" style="display:none;">
+      <span class="status-dot dot--sync"></span>
+      <span id="pendingLabel">0 thay đổi chờ đồng bộ</span>
+    </div>
+    <div class="status-bar" id="presenceBar" style="display:none;">
+      <span class="status-dot dot--online"></span>
+      <span id="presenceLabel">1 thiết bị đang online</span>
+    </div>
+
+    <div class="nav-account">
+      <span id="navAccountName">👤 admin</span>
+      <button class="btn btn--sm" id="logoutBtn">Đăng xuất</button>
+    </div>
+  </nav>
+
+  <main>
+    <section class="view" id="view-dashboard"></section>
+    <section class="view hidden" id="view-transactions"></section>
+    <section class="view hidden" id="view-budget"></section>
+    <section class="view hidden" id="view-reports"></section>
+    <section class="view hidden" id="view-family"></section>
+    <section class="view hidden" id="view-accounts"></section>
+    <section class="view hidden" id="view-categories"></section>
+    <section class="view hidden" id="view-notifications"></section>
+    <section class="view hidden" id="view-backup"></section>
+    <section class="view hidden" id="view-settings"></section>
+  </main>
+</div>
+
+<!-- ============ THANH ĐIỀU HƯỚNG DƯỚI (mobile) ============ -->
+<nav id="bottomNav" class="hidden">
+  <button class="bnav-btn active" data-tab="dashboard">
+    <span class="bnav-btn__icon">🏠</span><span>Tổng quan</span>
+  </button>
+  <button class="bnav-btn" data-tab="transactions">
+    <span class="bnav-btn__icon">📋</span><span>Giao dịch</span>
+  </button>
+  <button class="bnav-btn bnav-btn--fab" id="fabAddBtn">
+    <span class="bnav-btn__fab-circle">➕</span>
+  </button>
+  <button class="bnav-btn" data-tab="reports">
+    <span class="bnav-btn__icon">📊</span><span>Báo cáo</span>
+  </button>
+  <button class="bnav-btn" data-tab="settings">
+    <span class="bnav-btn__icon">⚙️</span><span>Cài đặt</span>
+  </button>
+</nav>
+
+<div id="toast" class="toast"></div>
+
+<!-- Firebase (CDN, cho phép chạy trực tiếp trên GitHub Pages) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+
+<!-- Cấu hình -->
+<script src="firebase-config.js"></script>
+
+<!-- Lưu trữ offline (IndexedDB: cache + hàng đợi ghi) -->
+<script src="js/offline-store.js"></script>
+
+<!-- Lõi đồng bộ dữ liệu -->
+<script src="js/firebase.js"></script>
+
+<!-- Đăng nhập (tài khoản quản trị mặc định, đồng bộ qua Firebase) -->
+<script src="js/auth.js"></script>
+
+<!-- Tự khởi tạo tài khoản/danh mục mặc định nếu Firebase đang rỗng -->
+<script src="js/seed.js"></script>
+
+<!-- Điều phối chung — PHẢI nạp trước các module tính năng bên dưới, vì
+     app.js là nơi định nghĩa FE.registerModule(). Nếu để app.js nạp sau,
+     mọi module gọi FE.registerModule() ngay khi file chạy sẽ gặp lỗi
+     "FE.registerModule is not a function", không module nào được đăng ký,
+     và các tab sẽ chuyển được khung nhưng nội dung luôn trống (tab coi như
+     không dùng được). -->
+<script src="js/app.js"></script>
+
+<!-- Các module tính năng (đăng ký vào FE sau khi app.js đã khởi tạo router) -->
+<script src="js/dashboard.js"></script>
+<script src="js/transactions.js"></script>
+<script src="js/budget.js"></script>
+<script src="js/reports.js"></script>
+<script src="js/family.js"></script>
+<script src="js/accounts.js"></script>
+<script src="js/categories.js"></script>
+<script src="js/notifications.js"></script>
+<script src="js/backup.js"></script>
+<script src="js/settings.js"></script>
+
+<script>
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("sw.js").then((reg) => {
+        reg.addEventListener("updatefound", () => {
+          const sw = reg.installing;
+          if (!sw) return;
+          sw.addEventListener("statechange", () => {
+            if (sw.state === "installed" && navigator.serviceWorker.controller) {
+              // Có bản mới của giao diện — dữ liệu (IndexedDB/Firebase) không bị ảnh hưởng.
+              if (window.FE && FE.util && FE.util.toast) {
+                FE.util.toast("Có bản cập nhật mới — tải lại trang để dùng bản mới nhất", "info");
+              }
+            }
+          });
+        });
+      }).catch((err) => console.warn("SW register failed", err));
+    });
+  }
+</script>
+
+</body>
+</html>

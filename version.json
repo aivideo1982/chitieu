@@ -1,0 +1,17 @@
+{
+  "version": "2.1.0",
+  "build": 5,
+  "releaseDate": "2026-08-08",
+  "changelog": [
+    "Nâng cấp toàn bộ giao diện sang tông sáng, hiện đại: nền giấy sổ sáng, thẻ trắng đổ bóng mềm, 3 màu nhấn (vàng đồng / xanh ngọc / đỏ gạch) đậm hơn để dễ đọc số liệu.",
+    "Sắp xếp lại 10 tab điều hướng theo 4 nhóm chức năng (Tổng quan / Sổ sách / Quản lý / Hệ thống) kèm nhãn phân nhóm, dễ định vị hơn.",
+    "Thêm hiệu ứng chuyên nghiệp: chuyển tab mượt (fade + trượt), thẻ/nút nâng nhẹ khi hover, thanh chỉ báo tab đang chọn, focus-ring rõ cho bàn phím, tôn trọng prefers-reduced-motion.",
+    "Sửa lỗi các tab không dùng được: js/app.js (nơi định nghĩa FE.registerModule) trước đây được nạp SAU các file module (dashboard.js, transactions.js...) nên toàn bộ module gọi FE.registerModule() bị lỗi 'not a function' và không được đăng ký — tab chuyển được khung nhưng nội dung luôn trống. Đã đổi thứ tự nạp script trong index.html.",
+    "Sửa lỗi gốc khiến không thêm được giao dịch: tự động khởi tạo tài khoản (Tiền mặt, Ngân hàng) và danh mục mặc định khi Firebase còn trống, thay vì chặn người dùng.",
+    "Viết lại form Thêm giao dịch: chọn nhanh Chi tiêu/Thu nhập, danh mục lọc theo đúng loại, validate số tiền > 0 / danh mục / tài khoản, hiển thị 'Đang lưu…' và chờ Firebase xác nhận thật (không dùng setTimeout giả lập).",
+    "Thêm thanh điều hướng dưới cùng (mobile) với nút + nổi bật (FAB) để thêm giao dịch từ bất kỳ màn hình nào.",
+    "Thêm đăng nhập tài khoản quản trị mặc định (admin/admin123), mật khẩu đồng bộ realtime qua Firebase.",
+    "Thêm hiển thị số thiết bị đang online theo thời gian thực (presence).",
+    "Firebase Database URL được cấu hình sẵn, tự động kết nối khi mở trang."
+  ]
+}
